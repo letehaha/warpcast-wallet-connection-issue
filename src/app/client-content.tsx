@@ -1,41 +1,109 @@
 "use client";
 
-import { useConnection, useWallet } from "@solana/wallet-adapter-react";
+import {
+  useConnection,
+  useWallet,
+  WalletContextState,
+} from "@solana/wallet-adapter-react";
 import ConnectButton from "@/components/ConnectButton";
 import { useCallback, useState } from "react";
 
-import { PublicKey, SystemProgram, LAMPORTS_PER_SOL } from "@solana/web3.js";
-import { makeTx } from "@/utils//make-tx"; // your makeTx helper
+import {
+  PublicKey,
+  SystemProgram,
+  LAMPORTS_PER_SOL,
+  Transaction,
+  Connection,
+  TransactionInstruction,
+  TransactionMessage,
+  VersionedTransaction,
+} from "@solana/web3.js";
+import { makeTx } from "@/utils//make-tx";
+
+async function sendSolWithGenericApproach({
+  connection,
+  signTransaction,
+  publicKey,
+  instructions,
+}: {
+  publicKey: PublicKey;
+  signTransaction: WalletContextState["signTransaction"];
+  connection: Connection;
+  instructions: TransactionInstruction[];
+}) {
+  alert("Using generic approach");
+  const { blockhash, lastValidBlockHeight } =
+    await connection.getLatestBlockhash();
+
+  const messageV0 = new TransactionMessage({
+    payerKey: publicKey,
+    recentBlockhash: blockhash,
+    instructions,
+  }).compileToV0Message();
+
+  const versionedTx = new VersionedTransaction(messageV0);
+
+  const signedTx = await signTransaction!(versionedTx);
+
+  const signature = await connection.sendRawTransaction(signedTx.serialize());
+  await connection.confirmTransaction(
+    { signature, blockhash, lastValidBlockHeight },
+    "confirmed",
+  );
+
+  alert("✅ Versioned transaction sent: " + signature);
+  return signature;
+}
 
 export const ClientContent = () => {
-  const { publicKey, signAllTransactions } = useWallet();
+  const { publicKey, signAllTransactions, signTransaction } = useWallet();
   const { connection } = useConnection();
 
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState(0.001);
+  const [checked, setChecked] = useState(false);
 
   const sendSol = useCallback(async () => {
-    if (!publicKey || !signAllTransactions) return;
+    if (!publicKey || !signAllTransactions || !signTransaction) return;
 
     try {
-      const ix = SystemProgram.transfer({
+      const transferInstruction = SystemProgram.transfer({
         fromPubkey: publicKey!,
         toPubkey: new PublicKey(recipient),
         lamports: amount * LAMPORTS_PER_SOL,
       });
 
-      const results = await makeTx({
-        connection,
-        feePayer: publicKey!,
-        instructions: [ix],
-        signAllTransactions: signAllTransactions,
-      });
+      if (checked) {
+        await sendSolWithGenericApproach({
+          connection,
+          publicKey,
+          signTransaction,
+          instructions: [transferInstruction],
+        });
+      } else {
+        alert("Using custom utilites");
 
-      alert("Success! Signature: " + results[0].signature);
+        const results = await makeTx({
+          connection,
+          feePayer: publicKey!,
+          instructions: [transferInstruction],
+          signAllTransactions: signAllTransactions,
+        });
+
+        alert("Success! Signature: " + results[0].signature);
+      }
     } catch (err) {
       alert((err as Error).message);
     }
-  }, [connection, publicKey, signAllTransactions, recipient, amount]);
+  }, [
+    connection,
+    publicKey,
+    signAllTransactions,
+    signTransaction,
+    recipient,
+    amount,
+    checked,
+  ]);
 
   return (
     <div>
@@ -58,6 +126,7 @@ export const ClientContent = () => {
             className="text-black p-3"
           />
         </label>
+
         <label className="grid gap-2">
           <span>Amount (SOL)</span>
           <input
@@ -67,6 +136,15 @@ export const ClientContent = () => {
             placeholder="0"
             className="text-black p-3"
           />
+        </label>
+
+        <label className="flex gap-2">
+          <input
+            checked={checked}
+            onChange={(e) => setChecked(!checked)}
+            type="checkbox"
+          />
+          <span>Use generic approach (no custom utilites)</span>
         </label>
 
         <button className="mt-2 p-4 bg-slate-600 active:bg-slate-700">

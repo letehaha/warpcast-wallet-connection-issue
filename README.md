@@ -12,3 +12,5 @@ To reproduce:
 4. Confirm signing transaction
 
 I added to the codebase simplified versions of our utils for sending transactions, to make it fair for our exact case
+
+**NOTE**: The error is reproducible with both our custom utilities and the most basic approach
